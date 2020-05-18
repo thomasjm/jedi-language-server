@@ -7,8 +7,6 @@ Official language server spec:
 """
 
 import itertools
-from subprocess import run
-import sys
 from typing import Dict, List, Optional
 
 from pygls.features import (
@@ -41,8 +39,6 @@ from pygls.types import (
     InitializeParams,
     InitializeResult,
     Location,
-    MarkupContent,
-    MarkupKind,
     ParameterInformation,
     RenameParams,
     SignatureHelp,
@@ -57,7 +53,7 @@ from pygls.types import (
 from . import jedi_utils, pygls_utils
 from .pygls_utils import rgetattr
 from .type_map import get_lsp_completion_type
-from .util import which
+from .util import docstring_to_markup_content, which
 
 
 class JediLanguageServerProtocol(LanguageServerProtocol):
@@ -116,7 +112,7 @@ def completion(
                 label=completion.name,
                 kind=get_lsp_completion_type(completion.type),
                 detail=completion.description,
-                documentation=completion.docstring(),
+                documentation=docstring_to_markup_content(completion.docstring()),
                 sort_text=jedi_utils.complete_sort_name(completion),
                 insert_text=pygls_utils.clean_completion_name(
                     completion.name, char
@@ -215,29 +211,17 @@ def hover(server: LanguageServer, params: TextDocumentPositionParams) -> Optiona
     jedi_script = jedi_utils.script(server.workspace, params.textDocument.uri)
     jedi_lines = jedi_utils.line_column(params.position)
     jedi_docstrings = (n.docstring() for n in jedi_script.help(**jedi_lines))
-    names = [name for name in jedi_docstrings if name]
+    docstrings = [x for x in jedi_docstrings if x]
 
-    # By default, return the response as plaintext
-    kind = MarkupKind.PlainText
+    if not docstrings: return None
 
-    # If pandoc is on the path, use it to convert the response from reStructuredText to Markdown
-    if which("pandoc"):
-        to_convert = names
-        names = []
-        for name in to_convert:
-            p = run(["pandoc", "--from", "rst", "--to", "markdown"], check=True, input=name.encode(), capture_output=True)
-            names.append(p.stdout.decode())
+    # Only the first one should matter, right?
+    docstring = docstrings[0]
 
-        kind = MarkupKind.Markdown
-
-    # If the final text is blank, return None
-    text = "\n".join(names)
-    if not text: return None
-
-    contents = MarkupContent(kind=kind, value=text)
+    content = docstring_to_markup_content(docstring)
     document = server.workspace.get_document(params.textDocument.uri)
     _range = pygls_utils.current_word_range(document, params.position)
-    return Hover(contents=contents, range=_range)
+    return Hover(contents=content, range=_range)
 
 
 @SERVER.feature(REFERENCES)
