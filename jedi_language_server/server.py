@@ -41,6 +41,8 @@ from pygls.types import (
     InitializeParams,
     InitializeResult,
     Location,
+    MarkupContent,
+    MarkupKind,
     ParameterInformation,
     RenameParams,
     SignatureHelp,
@@ -208,14 +210,17 @@ def highlight(
 
 
 @SERVER.feature(HOVER)
-def hover(server: LanguageServer, params: TextDocumentPositionParams) -> Hover:
+def hover(server: LanguageServer, params: TextDocumentPositionParams) -> Optional[Hover]:
     """Support Hover"""
     jedi_script = jedi_utils.script(server.workspace, params.textDocument.uri)
     jedi_lines = jedi_utils.line_column(params.position)
     jedi_docstrings = (n.docstring() for n in jedi_script.help(**jedi_lines))
     names = [name for name in jedi_docstrings if name]
 
-    # If pandoc is on the path, use it to convert rst to md
+    # By default, return the response as plaintext
+    kind = MarkupKind.PlainText
+
+    # If pandoc is on the path, use it to convert the response from reStructuredText to Markdown
     if which("pandoc"):
         to_convert = names
         names = []
@@ -223,7 +228,16 @@ def hover(server: LanguageServer, params: TextDocumentPositionParams) -> Hover:
             p = run(["pandoc", "--from", "rst", "--to", "markdown"], check=True, input=name.encode(), capture_output=True)
             names.append(p.stdout.decode())
 
-    return Hover(contents=names if names else "jedi: no help docs found")
+        kind = MarkupKind.Markdown
+
+    # If the final text is blank, return None
+    text = "\n".join(names)
+    if not text: return None
+
+    contents = MarkupContent(kind=kind, value=text)
+    document = server.workspace.get_document(params.textDocument.uri)
+    _range = pygls_utils.current_word_range(document, params.position)
+    return Hover(contents=contents, range=_range)
 
 
 @SERVER.feature(REFERENCES)
