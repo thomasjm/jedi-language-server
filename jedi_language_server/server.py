@@ -7,6 +7,8 @@ Official language server spec:
 """
 
 import itertools
+from subprocess import run
+import sys
 from typing import Dict, List, Optional
 
 from pygls.features import (
@@ -53,6 +55,7 @@ from pygls.types import (
 from . import jedi_utils, pygls_utils
 from .pygls_utils import rgetattr
 from .type_map import get_lsp_completion_type
+from .util import which
 
 
 class JediLanguageServerProtocol(LanguageServerProtocol):
@@ -211,6 +214,15 @@ def hover(server: LanguageServer, params: TextDocumentPositionParams) -> Hover:
     jedi_lines = jedi_utils.line_column(params.position)
     jedi_docstrings = (n.docstring() for n in jedi_script.help(**jedi_lines))
     names = [name for name in jedi_docstrings if name]
+
+    # If pandoc is on the path, use it to convert rst to md
+    if which("pandoc"):
+        to_convert = names
+        names = []
+        for name in to_convert:
+            p = run(["pandoc", "--from", "rst", "--to", "markdown"], check=True, input=name.encode(), capture_output=True)
+            names.append(p.stdout.decode())
+
     return Hover(contents=names if names else "jedi: no help docs found")
 
 
