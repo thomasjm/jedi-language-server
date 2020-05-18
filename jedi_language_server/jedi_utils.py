@@ -4,6 +4,7 @@ Translates pygls types back and forth with Jedi
 """
 
 from typing import Dict, List, Tuple
+import os
 
 import jedi.api.errors
 import jedi.inference.references
@@ -46,10 +47,17 @@ def script(workspace: Workspace, uri: str) -> Script:
 
 def project(workspace: Workspace) -> Project:
     """Simplifies getting jedi project"""
+
+    added_sys_path = []
+    extra_paths = os.getenv("JEDI_LANGUAGE_SERVER_EXTRA_PATHS")
+    if extra_paths:
+        added_sys_path = extra_paths.split(":")
+
     return Project(
         path=workspace.root_path,
         smart_sys_path=True,
         load_unsafe_extensions=False,
+        added_sys_path=added_sys_path
     )
 
 
